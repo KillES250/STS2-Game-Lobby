@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import { createServer } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
+import { RoomRelayManager } from "./relay.js";
 import {
   LobbyStore,
   LobbyStoreError,
@@ -15,15 +16,43 @@ const env = {
   heartbeatTimeoutMs: Number.parseInt(process.env.HEARTBEAT_TIMEOUT_SECONDS ?? "35", 10) * 1000,
   ticketTtlMs: Number.parseInt(process.env.TICKET_TTL_SECONDS ?? "120", 10) * 1000,
   wsPath: process.env.WS_PATH ?? "/control",
+  relayBindHost: process.env.RELAY_BIND_HOST ?? process.env.HOST ?? "0.0.0.0",
+  relayPublicHost: process.env.RELAY_PUBLIC_HOST ?? "",
+  relayPortStart: Number.parseInt(process.env.RELAY_PORT_START ?? "39000", 10),
+  relayPortEnd: Number.parseInt(process.env.RELAY_PORT_END ?? "39063", 10),
+  relayHostIdleMs: Number.parseInt(process.env.RELAY_HOST_IDLE_SECONDS ?? "20", 10) * 1000,
+  relayClientIdleMs: Number.parseInt(process.env.RELAY_CLIENT_IDLE_SECONDS ?? "90", 10) * 1000,
 };
 
 const store = new LobbyStore({
   heartbeatTimeoutMs: env.heartbeatTimeoutMs,
   ticketTtlMs: env.ticketTtlMs,
 });
+const relayManager = new RoomRelayManager(
+  {
+    bindHost: env.relayBindHost,
+    portStart: env.relayPortStart,
+    portEnd: env.relayPortEnd,
+    hostIdleMs: env.relayHostIdleMs,
+    clientIdleMs: env.relayClientIdleMs,
+  },
+  ({ phase, roomId, detail }) => {
+    console.log(`[relay] ${phase} room=${roomId} ${detail}`);
+  },
+);
 
 const app = express();
 app.use(express.json({ limit: "32kb" }));
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  res.on("finish", () => {
+    const durationMs = Date.now() - startedAt;
+    console.log(
+      `[http] ${req.method} ${req.originalUrl} ip=${requestIp(req)} status=${res.statusCode} durationMs=${durationMs}`,
+    );
+  });
+  next();
+});
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -82,7 +111,13 @@ app.post("/rooms", (req, res, next) => {
     }
 
     const room = store.createRoom(roomInput, requestIp(req));
-
+    const relayEndpoint = relayManager.allocateRoom(room.roomId, room.hostToken, resolveAdvertisedRelayHost(req));
+    if (relayEndpoint) {
+      room.relayEndpoint = relayEndpoint;
+    }
+    console.log(
+      `[lobby] create room roomId=${room.roomId} roomName="${room.room.roomName}" hostPlayer="${room.room.hostPlayerName}" remote=${requestIp(req)} relay=${relayEndpoint ? `${relayEndpoint.host}:${relayEndpoint.port}` : "disabled"}`,
+    );
     res.status(201).json(room);
   } catch (error) {
     next(error);
@@ -99,6 +134,14 @@ app.post("/rooms/:id/join", (req, res, next) => {
       modVersion: requiredString(body?.modVersion, "modVersion"),
       desiredSavePlayerNetId: optionalString(body?.desiredSavePlayerNetId),
     });
+    const relayEndpoint = relayManager.getRoomEndpoint(req.params.id, resolveAdvertisedRelayHost(req));
+    if (relayEndpoint) {
+      response.connectionPlan.relayAllowed = true;
+      response.connectionPlan.relayEndpoint = relayEndpoint;
+    }
+    console.log(
+      `[lobby] join ticket issued roomId=${req.params.id} player="${body?.playerName ?? ""}" ticketId=${response.ticketId} remote=${requestIp(req)} direct=${response.connectionPlan.directCandidates.length} relay=${relayEndpoint ? `${relayEndpoint.host}:${relayEndpoint.port}` : "disabled"}`,
+    );
     res.json(response);
   } catch (error) {
     next(error);
@@ -128,8 +171,32 @@ app.delete("/rooms/:id", (req, res, next) => {
   try {
     const hostToken = requiredString((req.body as { hostToken?: string } | undefined)?.hostToken, "hostToken");
     store.deleteRoom(req.params.id, hostToken);
+    relayManager.removeRoom(req.params.id);
     closeRoomSockets(req.params.id, 4000, "room_deleted");
+    console.log(`[lobby] room deleted roomId=${req.params.id}`);
     res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/rooms/:id/connection-events", (req, res, next) => {
+  try {
+    const body = req.body as Record<string, unknown> | undefined;
+    const ticketId = optionalString(body?.ticketId);
+    if (ticketId && !store.hasTicketForRoom(req.params.id, ticketId)) {
+      throw new LobbyStoreError(401, "invalid_ticket", "加入票据无效。");
+    }
+
+    const phase = requiredString(body?.phase, "phase");
+    const candidateLabel = optionalString(body?.candidateLabel) ?? "<none>";
+    const candidateEndpoint = optionalString(body?.candidateEndpoint) ?? "<none>";
+    const detail = optionalString(body?.detail) ?? "<none>";
+    const playerName = optionalString(body?.playerName) ?? "<unknown>";
+    console.log(
+      `[lobby] connection_event roomId=${req.params.id} ticketId=${ticketId ?? "<none>"} player="${playerName}" phase=${phase} candidate=${candidateLabel} endpoint=${candidateEndpoint} detail=${detail} remote=${requestIp(req)}`,
+    );
+    res.status(202).json({ ok: true });
   } catch (error) {
     next(error);
   }
@@ -244,7 +311,9 @@ wss.on("connection", (socket, req) => {
 const cleanupInterval = setInterval(() => {
   const deletedRoomIds = store.cleanupExpired();
   for (const roomId of deletedRoomIds) {
+    relayManager.removeRoom(roomId);
     closeRoomSockets(roomId, 4001, "room_expired");
+    console.log(`[lobby] room expired roomId=${roomId}`);
   }
 
   const staleThreshold = Date.now() - env.heartbeatTimeoutMs;
@@ -265,6 +334,9 @@ const cleanupInterval = setInterval(() => {
 
 server.listen(env.port, env.host, () => {
   console.log(`[lobby] listening on http://${env.host}:${env.port} (ws path ${env.wsPath})`);
+  console.log(
+    `[relay] enabled udp://${env.relayBindHost}:${env.relayPortStart}-${env.relayPortEnd} publicHost=${env.relayPublicHost || "<request-host>"}`,
+  );
 });
 
 function addPeer(peer: ControlPeer) {
@@ -342,6 +414,23 @@ function requestIp(req: Request) {
   return req.socket.remoteAddress ?? "";
 }
 
+function resolveAdvertisedRelayHost(req: Request) {
+  if (env.relayPublicHost.trim()) {
+    return env.relayPublicHost.trim();
+  }
+
+  const hostHeader = req.headers.host?.trim();
+  if (!hostHeader) {
+    return "127.0.0.1";
+  }
+
+  try {
+    return new URL(`http://${hostHeader}`).hostname;
+  } catch {
+    return hostHeader.replace(/:\d+$/, "");
+  }
+}
+
 function requiredString(value: unknown, name: string) {
   if (typeof value !== "string" || value.trim() === "") {
     throw new InputError(`${name} 不能为空。`);
@@ -392,6 +481,7 @@ process.on("SIGTERM", shutdown);
 function shutdown() {
   clearInterval(cleanupInterval);
   wss.close();
+  relayManager.close();
   server.close(() => {
     process.exit(0);
   });

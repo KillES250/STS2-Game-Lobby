@@ -15,11 +15,17 @@ export interface DirectEndpoint {
   port: number;
 }
 
+export interface RelayEndpoint {
+  host: string;
+  port: number;
+}
+
 export interface ConnectionPlan {
   strategy: "direct-first";
   relayAllowed: boolean;
   controlChannelId: string;
   directCandidates: DirectEndpoint[];
+  relayEndpoint?: RelayEndpoint | undefined;
 }
 
 export interface SavedRunSlotInput {
@@ -119,6 +125,24 @@ export interface StoreConfig {
   ticketTtlMs: number;
 }
 
+export interface CreateRoomResult {
+  roomId: string;
+  controlChannelId: string;
+  hostToken: string;
+  heartbeatIntervalSeconds: number;
+  room: RoomSummary;
+  relayEndpoint?: RelayEndpoint | undefined;
+}
+
+export interface JoinRoomResult {
+  ticketId: string;
+  roomId: string;
+  issuedAt: Date;
+  expiresAt: Date;
+  room: RoomSummary;
+  connectionPlan: ConnectionPlan;
+}
+
 export class LobbyStoreError extends Error {
   constructor(
     readonly statusCode: number,
@@ -144,7 +168,7 @@ export class LobbyStore {
       .map((room) => this.toRoomSummary(room));
   }
 
-  createRoom(input: CreateRoomInput, remoteAddress: string, now = new Date()) {
+  createRoom(input: CreateRoomInput, remoteAddress: string, now = new Date()): CreateRoomResult {
     const roomId = randomUUID();
     const controlChannelId = randomUUID();
     const hostToken = randomToken();
@@ -191,7 +215,7 @@ export class LobbyStore {
     };
   }
 
-  joinRoom(roomId: string, input: JoinRoomInput, now = new Date()) {
+  joinRoom(roomId: string, input: JoinRoomInput, now = new Date()): JoinRoomResult {
     this.cleanupExpired(now);
     const room = this.requireRoom(roomId);
     const hostSession = this.requireHostSession(roomId);
@@ -250,6 +274,7 @@ export class LobbyStore {
 
     return {
       ticketId: ticket.ticketId,
+      roomId,
       issuedAt: ticket.issuedAt,
       expiresAt: ticket.expiresAt,
       room: this.toRoomSummary(room),
@@ -337,6 +362,24 @@ export class LobbyStore {
     }
 
     return ticket;
+  }
+
+  hasTicketForRoom(roomId: string, ticketId: string) {
+    const ticket = this.tickets.get(ticketId);
+    if (!ticket) {
+      return false;
+    }
+
+    if (ticket.roomId !== roomId) {
+      return false;
+    }
+
+    if (ticket.expiresAt.getTime() <= Date.now()) {
+      this.tickets.delete(ticket.ticketId);
+      return false;
+    }
+
+    return true;
   }
 
   private requireRoom(roomId: string) {

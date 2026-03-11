@@ -6,15 +6,17 @@
 - 房间密码校验
 - 房主心跳与僵尸房间清理
 - 控制通道握手与广播
-- 向客户端返回 `ENet` 直连优先的连接计划
+- 向客户端返回 `ENet` 直连优先、失败时自动切 relay 的连接计划
 - 保存续局大厅房间的 `savedRun` 元数据与可接管角色槽位
+- 记录 `direct_timeout` / `relay_success` / `relay_failure` 等连接阶段日志
 
 它不负责：
 
 - 战斗同步
 - 账号系统
-- 全程流量中继
 - NAT 必成功穿透
+
+当前 relay 的定位是“直连失败时的房间级兜底路径”，不是完整的独立联机协议。
 
 ## 一键部署
 
@@ -52,6 +54,12 @@ npm start
 
 - HTTP: `http://0.0.0.0:8787`
 - WebSocket: `ws://0.0.0.0:8787/control`
+- Relay UDP: `udp://0.0.0.0:39000-39063`
+
+公网部署时至少需要放行：
+
+- `8787/TCP`
+- `39000-39063/UDP`
 
 ## 打包分发
 
@@ -73,6 +81,12 @@ npm start
 - `HEARTBEAT_TIMEOUT_SECONDS`
 - `TICKET_TTL_SECONDS`
 - `WS_PATH`
+- `RELAY_BIND_HOST`
+- `RELAY_PUBLIC_HOST`
+- `RELAY_PORT_START`
+- `RELAY_PORT_END`
+- `RELAY_HOST_IDLE_SECONDS`
+- `RELAY_CLIENT_IDLE_SECONDS`
 
 示例见 [lobby-service/.env.example](/Users/mac/Desktop/STS2_Learner/lobby-service/.env.example)。
 
@@ -83,6 +97,7 @@ npm start
 - `POST /rooms`
 - `POST /rooms/:id/join`
 - `POST /rooms/:id/heartbeat`
+- `POST /rooms/:id/connection-events`
 - `DELETE /rooms/:id`
 - `WS /control`
 
@@ -98,6 +113,9 @@ npm start
 - `POST /rooms/:id/heartbeat`
   - 支持上报 `connectedPlayerNetIds`
   - 服务端会据此更新哪些续局角色槽位当前已被占用
+- `POST /rooms/:id/connection-events`
+  - 客户端会上报 `direct_timeout`、`relay_success`、`relay_failure` 等阶段事件
+  - 这些记录会进入服务端日志，便于排查公网联机失败原因
 
 ## 控制通道约定
 
@@ -115,3 +133,21 @@ npm start
 - 同房间 peers 广播
 
 这已经足够支撑当前大厅模式，但整体联机仍以游戏原生 `ENet` 直连为主。
+
+## 日志排查
+
+推荐直接看 systemd journal：
+
+```bash
+journalctl -u sts2-lobby.service -n 100 --no-pager
+```
+
+常见日志包括：
+
+- `create room`
+- `join ticket issued`
+- `connection_event ... phase=direct_timeout`
+- `connection_event ... phase=relay_success`
+- `connection_event ... phase=relay_failure`
+- `relay_allocated`
+- `relay_removed`

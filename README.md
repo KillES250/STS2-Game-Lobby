@@ -23,9 +23,15 @@
 - 多人续局存档会和大厅房间绑定，房主重新进入续局时自动重新发布
 - 队友加入续局房间时会按可接管角色槽位加入，不再依赖旧连接 ID
 - 加入房间时会显示加载中的阶段提示
+- 加入时优先尝试直连；如果超时，会自动切到服务端 relay fallback
 
 使用说明：
 
 - 客户端说明见 [sts2_lan_connect/README.md](./sts2_lan_connect/README.md)
 - 客户端玩家手册见 [sts2_lan_connect/STS2_LAN_CONNECT_USER_GUIDE_ZH.md](./sts2_lan_connect/STS2_LAN_CONNECT_USER_GUIDE_ZH.md)
 - 服务端说明见 [sts2_lobby_service/README.md](./sts2_lobby_service/README.md)
+
+公网部署提醒：
+
+- 大厅 API 需要放行 `8787/TCP`
+- relay fallback 需要额外放行 `39000-39063/UDP`

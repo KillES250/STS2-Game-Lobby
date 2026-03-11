@@ -26,6 +26,12 @@ PORT="${STS2_LOBBY_PORT:-8787}"
 HEARTBEAT_TIMEOUT_SECONDS="${STS2_HEARTBEAT_TIMEOUT_SECONDS:-35}"
 TICKET_TTL_SECONDS="${STS2_TICKET_TTL_SECONDS:-120}"
 WS_PATH="${STS2_LOBBY_WS_PATH:-/control}"
+RELAY_BIND_HOST="${STS2_LOBBY_RELAY_BIND_HOST:-$HOST}"
+RELAY_PUBLIC_HOST="${STS2_LOBBY_RELAY_PUBLIC_HOST:-}"
+RELAY_PORT_START="${STS2_LOBBY_RELAY_PORT_START:-39000}"
+RELAY_PORT_END="${STS2_LOBBY_RELAY_PORT_END:-39063}"
+RELAY_HOST_IDLE_SECONDS="${STS2_LOBBY_RELAY_HOST_IDLE_SECONDS:-20}"
+RELAY_CLIENT_IDLE_SECONDS="${STS2_LOBBY_RELAY_CLIENT_IDLE_SECONDS:-90}"
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
 NPM_BIN="${NPM_BIN:-$(command -v npm || true)}"
 SKIP_SYSTEMD=0
@@ -43,6 +49,14 @@ Options:
   --service-name <name> systemd service name. Default: sts2-lobby
   --host <value>        HOST written into .env. Default: 0.0.0.0
   --port <value>        PORT written into .env. Default: 8787
+  --relay-bind-host <value>
+                        RELAY_BIND_HOST written into .env. Default: same as --host
+  --relay-public-host <value>
+                        RELAY_PUBLIC_HOST written into .env. Default: empty, service uses request host
+  --relay-port-start <value>
+                        RELAY_PORT_START written into .env. Default: 39000
+  --relay-port-end <value>
+                        RELAY_PORT_END written into .env. Default: 39063
   --run-user <name>     systemd User value when auto-installing the service.
   --run-group <name>    systemd Group value when auto-installing the service.
   --skip-systemd        Only install files and build the service; do not create/start systemd unit.
@@ -91,6 +105,26 @@ while [[ $# -gt 0 ]]; do
     --port)
       [[ $# -ge 2 ]] || die "--port requires a value"
       PORT="$2"
+      shift 2
+      ;;
+    --relay-bind-host)
+      [[ $# -ge 2 ]] || die "--relay-bind-host requires a value"
+      RELAY_BIND_HOST="$2"
+      shift 2
+      ;;
+    --relay-public-host)
+      [[ $# -ge 2 ]] || die "--relay-public-host requires a value"
+      RELAY_PUBLIC_HOST="$2"
+      shift 2
+      ;;
+    --relay-port-start)
+      [[ $# -ge 2 ]] || die "--relay-port-start requires a value"
+      RELAY_PORT_START="$2"
+      shift 2
+      ;;
+    --relay-port-end)
+      [[ $# -ge 2 ]] || die "--relay-port-end requires a value"
+      RELAY_PORT_END="$2"
       shift 2
       ;;
     --run-user)
@@ -161,6 +195,12 @@ PORT=$PORT
 HEARTBEAT_TIMEOUT_SECONDS=$HEARTBEAT_TIMEOUT_SECONDS
 TICKET_TTL_SECONDS=$TICKET_TTL_SECONDS
 WS_PATH=$WS_PATH
+RELAY_BIND_HOST=$RELAY_BIND_HOST
+RELAY_PUBLIC_HOST=$RELAY_PUBLIC_HOST
+RELAY_PORT_START=$RELAY_PORT_START
+RELAY_PORT_END=$RELAY_PORT_END
+RELAY_HOST_IDLE_SECONDS=$RELAY_HOST_IDLE_SECONDS
+RELAY_CLIENT_IDLE_SECONDS=$RELAY_CLIENT_IDLE_SECONDS
 EOF
   log "Created default environment file: $ENV_FILE"
 else
@@ -225,3 +265,4 @@ log "Installed systemd unit: $UNIT_PATH"
 systemctl daemon-reload
 systemctl enable --now "$SERVICE_NAME"
 log "Service started. Health check: curl http://127.0.0.1:$PORT/health"
+log "If relay fallback is needed, open UDP ports $RELAY_PORT_START-$RELAY_PORT_END on the server firewall/security group."
