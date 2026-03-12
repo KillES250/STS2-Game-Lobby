@@ -6,11 +6,14 @@
 
 - `sts2_lan_connect/`
   - 客户端 MOD 发布目录
-  - 包含 macOS / Windows 一键安装或卸载切换脚本
+  - 包含 macOS 双击入口 `install-sts2-lan-connect-macos.command`
+  - 包含 Windows 双击入口 `install-sts2-lan-connect-windows.bat`
   - 包含默认大厅绑定 `lobby-defaults.json`
   - 包含大厅与续局联机使用说明
 - `sts2_lan_connect-release.zip`
   - 客户端压缩发布包
+- `联机大厅mod.zip`
+  - 客户端压缩发布包的中文别名
 - `sts2_lobby_service/`
   - Linux 服务端发布目录
   - 包含一键部署脚本和服务端源码
@@ -21,6 +24,7 @@
 
 - 游戏内大厅使用长条房间卡片列表，支持单击选中、双击加入
 - 多人续局存档会和大厅房间绑定，房主重新进入续局时自动重新发布
+- 修复了房主 `保存并退出` 后多人续局档被错误判坏档的问题
 - 队友加入续局房间时会按可接管角色槽位加入，不再依赖旧连接 ID
 - 加入房间时会显示加载中的阶段提示
 - 加入时优先尝试直连；如果超时，会自动切到服务端 relay fallback
