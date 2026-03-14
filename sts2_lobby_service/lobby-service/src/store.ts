@@ -175,7 +175,6 @@ export class LobbyStore {
   }
 
   listRooms(now = new Date()): RoomSummary[] {
-    this.cleanupExpired(now);
     return [...this.rooms.values()]
       .filter((room) => room.status !== "closed")
       .sort((left, right) => right.lastHeartbeatAt.getTime() - left.lastHeartbeatAt.getTime())
@@ -231,7 +230,6 @@ export class LobbyStore {
   }
 
   joinRoom(roomId: string, input: JoinRoomInput, now = new Date()): JoinRoomResult {
-    this.cleanupExpired(now);
     const room = this.requireRoom(roomId);
     const hostSession = this.requireHostSession(roomId);
     const requestedVersion = input.version.trim();

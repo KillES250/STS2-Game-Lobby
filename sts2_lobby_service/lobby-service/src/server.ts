@@ -1,8 +1,9 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import { createServer } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
-import { assertRelayJoinReady } from "./join-guard.js";
+import { assertRelayCreateReady, assertRelayJoinReady } from "./join-guard.js";
 import { RoomRelayManager } from "./relay.js";
+import { cleanupExpiredRooms } from "./room-cleanup.js";
 import {
   LobbyStore,
   LobbyStoreError,
@@ -70,6 +71,7 @@ app.use((req, res, next) => {
 });
 
 app.get("/health", (_req, res) => {
+  cleanupExpiredRoomsNow();
   res.json({
     ok: true,
     rooms: store.listRooms().length,
@@ -80,11 +82,20 @@ app.get("/health", (_req, res) => {
 });
 
 app.get("/rooms", (_req, res) => {
+  cleanupExpiredRoomsNow();
   res.json(store.listRooms());
 });
 
 app.post("/rooms", (req, res, next) => {
+  let createdRoom:
+    | {
+        roomId: string;
+        hostToken: string;
+      }
+    | undefined;
+
   try {
+    cleanupExpiredRoomsNow();
     const body = req.body as Partial<CreateRoomInput> | undefined;
     const roomInput: CreateRoomInput = {
       roomName: requiredString(body?.roomName, "roomName"),
@@ -129,21 +140,37 @@ app.post("/rooms", (req, res, next) => {
     }
 
     const room = store.createRoom(roomInput, requestIp(req));
+    createdRoom = {
+      roomId: room.roomId,
+      hostToken: room.hostToken,
+    };
     const relayEndpoint = relayManager.allocateRoom(room.roomId, room.hostToken, resolveAdvertisedRelayHost(req));
+    assertRelayCreateReady(env.connectionStrategy, relayEndpoint != null);
     if (relayEndpoint) {
       room.relayEndpoint = relayEndpoint;
+      room.room.relayState = "planned";
     }
     console.log(
       `[lobby] create room roomId=${room.roomId} roomName="${room.room.roomName}" hostPlayer="${room.room.hostPlayerName}" version=${room.room.version} modVersion=${room.room.modVersion} remote=${requestIp(req)} relay=${relayEndpoint ? `${relayEndpoint.host}:${relayEndpoint.port}` : "disabled"} relayState=${room.room.relayState}`,
     );
     res.status(201).json(room);
   } catch (error) {
+    if (createdRoom) {
+      try {
+        store.deleteRoom(createdRoom.roomId, createdRoom.hostToken);
+      } catch {
+        // Room may have already been removed as part of rollback.
+      }
+      relayManager.removeRoom(createdRoom.roomId);
+      closeRoomSockets(createdRoom.roomId, 4000, "room_create_failed");
+    }
     next(error);
   }
 });
 
 app.post("/rooms/:id/join", (req, res, next) => {
   try {
+    cleanupExpiredRoomsNow();
     const body = req.body as Partial<JoinRoomInput> | undefined;
     const response = store.joinRoom(req.params.id, {
       playerName: requiredString(body?.playerName, "playerName"),
@@ -339,12 +366,7 @@ wss.on("connection", (socket, req) => {
 });
 
 const cleanupInterval = setInterval(() => {
-  const deletedRoomIds = store.cleanupExpired();
-  for (const roomId of deletedRoomIds) {
-    relayManager.removeRoom(roomId);
-    closeRoomSockets(roomId, 4001, "room_expired");
-    console.log(`[lobby] room expired roomId=${roomId}`);
-  }
+  cleanupExpiredRoomsNow();
 
   const staleThreshold = Date.now() - env.heartbeatTimeoutMs;
   for (const peers of roomPeers.values()) {
@@ -402,6 +424,15 @@ function closeRoomSockets(roomId: string, code: number, reason: string) {
   }
 
   roomPeers.delete(roomId);
+}
+
+function cleanupExpiredRoomsNow(now = new Date()) {
+  return cleanupExpiredRooms({
+    cleanupExpired: (cleanupNow) => store.cleanupExpired(cleanupNow),
+    removeRelayRoom: (roomId) => relayManager.removeRoom(roomId),
+    closeRoomSockets,
+    log: (message) => console.log(message),
+  }, now);
 }
 
 function broadcastToRoom(sender: ControlPeer, envelope: Record<string, unknown>) {
