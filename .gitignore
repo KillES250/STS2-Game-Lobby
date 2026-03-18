@@ -1,1 +1,11 @@
 .DS_Store
+Thumbs.db
+
+sts2-lan-connect/.godot/
+sts2-lan-connect/build/
+sts2-lan-connect/release/
+
+lobby-service/node_modules/
+lobby-service/dist/
+lobby-service/release/
+lobby-service/.env

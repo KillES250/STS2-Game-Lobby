@@ -1,0 +1,6 @@
+{
+  "baseUrl": "https://lobby.example.com",
+  "wsUrl": "wss://lobby.example.com/control",
+  "compatibilityProfile": "strict",
+  "connectionStrategy": "direct-first"
+}

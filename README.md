@@ -1,53 +1,127 @@
-# STS2 Game Lobby Releases
+# STS2 LAN Connect
 
-这个仓库用于分发《Slay the Spire 2》联机大厅相关发布产物。
+`STS2 LAN Connect` 是一个《Slay the Spire 2》联机大厅方案，包含：
 
-当前发布内容：
+- `sts2-lan-connect/`
+  游戏内客户端 MOD，负责大厅 UI、建房/加房流程、续局绑定、调试报告和与官方联机流程的桥接。
+- `lobby-service/`
+  `Node.js / TypeScript` 大厅服务，负责房间目录、密码校验、加入票据、房主心跳、控制通道与 relay fallback。
 
-- `sts2_lan_connect/`
-  - 客户端 MOD 发布目录
-  - 包含 macOS 双击入口 `install-sts2-lan-connect-macos.command`
-  - 包含 Windows 双击入口 `install-sts2-lan-connect-windows.bat`
-  - 包含默认大厅绑定 `lobby-defaults.json`
-  - 包含版本单一真源 `mod_manifest.json`
-  - 包含大厅与续局联机使用说明
-- `sts2_lan_connect-release.zip`
-  - 客户端压缩发布包
-- `联机大厅mod.zip`
-  - 客户端压缩发布包的中文别名
-- `游戏大厅mod-多端优化版.zip`
-  - 客户端压缩发布包的兼容别名
-- `sts2_lobby_service/`
-  - Linux 服务端发布目录
-  - 包含一键部署脚本和服务端源码
-- `sts2_lobby_service.zip`
-  - 服务端压缩发布包
+当前公开客户端版本：`0.2.1`
 
-当前客户端特性：
+## 主要特性
 
-- 游戏内大厅支持关键词搜索、分页、房间状态标签和服务健康图标
-- 房间列表支持分页、鼠标滚轮、移动端按住滑动和加宽滚动条的多层兜底交互
-- 多人续局存档会和大厅房间绑定，房主重新进入续局时自动重新发布
-- 房间显示真实游戏版本、真实 MOD 版本、`relay` 状态和是否已开局
-- 加入失败会细分为版本不一致、MOD 不一致、缺少哪些 MOD、房间已开局、房间已满等原因
-- Windows / Steam 下多人续局的 `载入` / `放弃` 现在走兼容保护，不需要额外启动参数来规避 `.VAL.corrupt`
-- macOS 安装 / 卸载脚本会自动刷新 `SlayTheSpire2.app` 的签名，避免 bundle 被修改后无法启动
-- 当前公开发布包使用的大厅地址、兼容档位和连接策略，以 `sts2_lan_connect/lobby-defaults.json` 为准
+- 大厅内支持关键词搜索、分页和可叠加筛选
+- 筛选支持 `公开`、`上锁`、`可加入`
+- 房间列表显示真实游戏版本、真实 MOD 版本、房间状态和 `relay` 状态
+- 大厅延迟显示改为独立探测，不再受房间列表体量影响
+- 加入失败会细分为版本不一致、MOD 不一致、房间已开局、房间已满等原因
+- 多人续局存档会绑定大厅房间，房主重新进入续局时自动重新发布
+- 大厅内可一键复制本地调试报告，方便和服务端日志对照
+- Windows / macOS 客户端支持一键安装 / 卸载
+- Linux 服务端支持一键部署
 
-当前服务端特性：
+## 目录结构
 
-- `join` 前置校验会明确区分 `version_mismatch`、`mod_version_mismatch`、`room_started`、`room_full`
-- 通过 `STRICT_GAME_VERSION_CHECK`、`STRICT_MOD_VERSION_CHECK`、`CONNECTION_STRATEGY` 可以切换严格服或测试服策略
-- 服务端发布目录包含可直接部署的脚本、`.env.example` 和当前源码
+- `docs/`
+  项目文档、玩家安装说明、使用说明、部署说明
+- `research/`
+  研究资料与重建笔记
+- `scripts/`
+  构建、打包、安装、部署、公开仓库同步脚本
+- `sts2-lan-connect/`
+  客户端 MOD 源码
+- `lobby-service/`
+  大厅服务源码
 
-使用说明：
+说明：
 
-- 客户端说明见 [sts2_lan_connect/README.md](./sts2_lan_connect/README.md)
-- 客户端玩家手册见 [sts2_lan_connect/STS2_LAN_CONNECT_USER_GUIDE_ZH.md](./sts2_lan_connect/STS2_LAN_CONNECT_USER_GUIDE_ZH.md)
-- 服务端说明见 [sts2_lobby_service/README.md](./sts2_lobby_service/README.md)
+- 本地构建产物仍写入各模块自己的 `release/` 目录
+- 通过 `scripts/sync-release-repo.sh` 同步到公开仓库后，会额外生成统一的 `releases/` 目录
 
-公网部署提醒：
+## 快速开始
 
-- 大厅 API 需要放行 `8787/TCP`
-- relay fallback 需要额外放行 `39000-39511/UDP`
-- 如果客户端启用了 `Clash`、`Surge`、系统全局代理或 `TUN`，请让大厅服务器 IP 走 `DIRECT`
+### 1. 构建客户端
+
+```bash
+./scripts/build-sts2-lan-connect.sh
+```
+
+如果需要构建后直接安装到本机游戏：
+
+```bash
+./scripts/build-sts2-lan-connect.sh --install
+```
+
+### 2. 打包客户端
+
+```bash
+./scripts/package-sts2-lan-connect.sh
+```
+
+产物位于：
+
+- `sts2-lan-connect/release/sts2_lan_connect/`
+- `sts2-lan-connect/release/sts2_lan_connect-release.zip`
+
+### 3. 打包服务端
+
+```bash
+./scripts/package-lobby-service.sh
+```
+
+产物位于：
+
+- `lobby-service/release/sts2_lobby_service/`
+- `lobby-service/release/sts2_lobby_service.zip`
+
+### 4. 部署服务端
+
+```bash
+sudo ./scripts/install-lobby-service-linux.sh --install-dir /opt/sts2-lobby
+```
+
+默认需要放行：
+
+- `8787/TCP`
+- `39000-39511/UDP`
+
+### 5. 同步公开仓库
+
+如果你本地已经 clone 了公开仓库 `STS-Game-Lobby`：
+
+```bash
+./scripts/sync-release-repo.sh --repo-dir ~/Desktop/STS-Game-Lobby
+```
+
+同步内容包括：
+
+- 根 README、许可证、`.gitignore`
+- `docs/`、`research/`、`scripts/`
+- `sts2-lan-connect/`、`lobby-service/` 源码
+- `releases/` 下的客户端和服务端发布产物
+
+## 环境变量
+
+客户端打包支持这些环境变量：
+
+- `STS2_LOBBY_DEFAULT_BASE_URL`
+- `STS2_LOBBY_DEFAULT_WS_URL`
+- `STS2_LOBBY_COMPATIBILITY_PROFILE`
+- `STS2_LOBBY_CONNECTION_STRATEGY`
+
+如果只设置了 `STS2_LOBBY_DEFAULT_BASE_URL`，打包脚本会自动推导 WS 地址。
+
+## 文档
+
+- [客户端发布包安装说明](./docs/CLIENT_RELEASE_README_ZH.md)
+- [客户端使用说明](./docs/STS2_LAN_CONNECT_USER_GUIDE_ZH.md)
+- [双端部署指南](./docs/STS2_LOBBY_DEPLOYMENT_GUIDE_ZH.md)
+- [服务端说明](./lobby-service/README.md)
+- [研究资料索引](./research/README.md)
+
+## 版权与说明
+
+- 本项目仅用于学习、研究和 MOD 开发测试
+- 《Slay the Spire 2》及相关版权归 Mega Crit 所有
+- 本项目与 Mega Crit 无官方关联

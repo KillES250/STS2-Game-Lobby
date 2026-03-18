@@ -1,0 +1,6 @@
+{
+  "baseUrl": "http://118.25.157.52:8787",
+  "wsUrl": "ws://118.25.157.52:8787/control",
+  "compatibilityProfile": "test_relaxed",
+  "connectionStrategy": "relay-first"
+}

@@ -1,0 +1,10 @@
+; Engine configuration file.
+; Generated as a minimal STS2 modding scaffold.
+
+config_version=5
+
+[application]
+
+config/name="STS2 LAN Connect"
+config/features=PackedStringArray("4.5", "Forward Plus")
+config/icon="res://icon.svg"

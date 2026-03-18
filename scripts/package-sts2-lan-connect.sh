@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ASSEMBLY_NAME="sts2_lan_connect"
+BUILD_SCRIPT="$ROOT_DIR/scripts/build-sts2-lan-connect.sh"
+PROJECT_DIR="$ROOT_DIR/sts2-lan-connect"
+PACKAGE_ROOT="$PROJECT_DIR/release/$ASSEMBLY_NAME"
+PACKAGE_BUILD_MOD_DIR="$PROJECT_DIR/release/.build_mod_output/$ASSEMBLY_NAME"
+PCK_FILE="$PROJECT_DIR/build/$ASSEMBLY_NAME.pck"
+DLL_FILE="$PROJECT_DIR/.godot/mono/temp/bin/Debug/$ASSEMBLY_NAME.dll"
+GUIDE_FILE="$ROOT_DIR/docs/STS2_LAN_CONNECT_USER_GUIDE_ZH.md"
+RELEASE_README="$ROOT_DIR/docs/CLIENT_RELEASE_README_ZH.md"
+MAC_INSTALLER="$ROOT_DIR/scripts/install-sts2-lan-connect-macos.sh"
+MAC_INSTALLER_COMMAND="$ROOT_DIR/scripts/install-sts2-lan-connect-macos.command"
+WIN_INSTALLER="$ROOT_DIR/scripts/install-sts2-lan-connect-windows.ps1"
+WIN_INSTALLER_BAT="$ROOT_DIR/scripts/install-sts2-lan-connect-windows.bat"
+CLIENT_ALIAS_ZIP="$PROJECT_DIR/release/联机大厅mod.zip"
+CLIENT_ALT_ALIAS_ZIP="$PROJECT_DIR/release/游戏大厅mod-多端优化版.zip"
+DEFAULTS_FILE_NAME="lobby-defaults.json"
+MANIFEST_FILE_NAME="$ASSEMBLY_NAME.json"
+LOCAL_DEFAULTS_FILE="$PROJECT_DIR/$DEFAULTS_FILE_NAME"
+LOCAL_MANIFEST_FILE="$PROJECT_DIR/$MANIFEST_FILE_NAME"
+SKIP_BUILD=0
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./scripts/package-sts2-lan-connect.sh [options]
+
+Options:
+  --skip-build   Reuse the existing DLL/PCK artifacts and refresh only the release directory and zip.
+  --help         Show this help.
+
+Environment:
+  STS2_LOBBY_DEFAULT_BASE_URL
+  STS2_LOBBY_DEFAULT_WS_URL
+  STS2_LOBBY_COMPATIBILITY_PROFILE
+  STS2_LOBBY_CONNECTION_STRATEGY
+EOF
+}
+
+die() {
+  echo "$*" >&2
+  exit 1
+}
+
+require_file() {
+  local path="$1"
+  [[ -f "$path" ]] || die "Expected file is missing from release package: $path"
+}
+
+verify_package_manifest() {
+  local package_dir="$1"
+
+  require_file "$package_dir/$ASSEMBLY_NAME.dll"
+  require_file "$package_dir/$ASSEMBLY_NAME.pck"
+  require_file "$package_dir/$MANIFEST_FILE_NAME"
+  require_file "$package_dir/README.md"
+  require_file "$package_dir/STS2_LAN_CONNECT_USER_GUIDE_ZH.md"
+  require_file "$package_dir/install-sts2-lan-connect-macos.sh"
+  require_file "$package_dir/install-sts2-lan-connect-macos.command"
+  require_file "$package_dir/install-sts2-lan-connect-windows.ps1"
+  require_file "$package_dir/install-sts2-lan-connect-windows.bat"
+}
+
+verify_zip_manifest() {
+  local zip_path="$1"
+  local zip_listing
+  zip_listing="$(zipinfo -1 "$zip_path")"
+
+  [[ "$zip_listing" == *"$ASSEMBLY_NAME/install-sts2-lan-connect-windows.bat"* ]] || die "Release zip is missing install-sts2-lan-connect-windows.bat"
+  [[ "$zip_listing" == *"$ASSEMBLY_NAME/install-sts2-lan-connect-windows.ps1"* ]] || die "Release zip is missing install-sts2-lan-connect-windows.ps1"
+  [[ "$zip_listing" == *"$ASSEMBLY_NAME/install-sts2-lan-connect-macos.sh"* ]] || die "Release zip is missing install-sts2-lan-connect-macos.sh"
+  [[ "$zip_listing" == *"$ASSEMBLY_NAME/install-sts2-lan-connect-macos.command"* ]] || die "Release zip is missing install-sts2-lan-connect-macos.command"
+  [[ "$zip_listing" == *"$ASSEMBLY_NAME/$MANIFEST_FILE_NAME"* ]] || die "Release zip is missing $MANIFEST_FILE_NAME"
+}
+
+clean_release_noise() {
+  find "$PROJECT_DIR/release" -maxdepth 1 \( -name '.DS_Store' -o -name "$ASSEMBLY_NAME 2" -o -name "$ASSEMBLY_NAME 3" -o -name '游戏大厅mod-多端&UI优化版.zip' \) -exec rm -rf {} +
+}
+
+resolve_artifact() {
+  local description="$1"
+  shift
+
+  local candidate
+  for candidate in "$@"; do
+    if [[ -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+
+  die "Could not find $description. Re-run without --skip-build, or build the mod first."
+}
+
+write_lobby_defaults() {
+  local target_dir="$1"
+  local base_url="${STS2_LOBBY_DEFAULT_BASE_URL:-}"
+  local ws_url="${STS2_LOBBY_DEFAULT_WS_URL:-}"
+  local compatibility_profile="${STS2_LOBBY_COMPATIBILITY_PROFILE:-}"
+  local connection_strategy="${STS2_LOBBY_CONNECTION_STRATEGY:-}"
+
+  if [[ -n "$base_url" ]]; then
+    if [[ -z "$ws_url" ]]; then
+      case "$base_url" in
+        https://*) ws_url="wss://${base_url#https://}" ;;
+        http://*) ws_url="ws://${base_url#http://}" ;;
+        *)
+          echo "STS2_LOBBY_DEFAULT_BASE_URL must start with http:// or https://" >&2
+          exit 1
+          ;;
+      esac
+      ws_url="${ws_url%/}/control"
+    fi
+
+    cat > "$target_dir/$DEFAULTS_FILE_NAME" <<EOF
+{
+  "baseUrl": "$base_url",
+  "wsUrl": "$ws_url",
+  "compatibilityProfile": "${compatibility_profile:-test_relaxed}",
+  "connectionStrategy": "${connection_strategy:-relay-first}"
+}
+EOF
+    return
+  fi
+
+  if [[ -f "$LOCAL_DEFAULTS_FILE" ]]; then
+    cp "$LOCAL_DEFAULTS_FILE" "$target_dir/$DEFAULTS_FILE_NAME"
+  fi
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-build)
+      SKIP_BUILD=1
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      die "Unknown option: $1"
+      ;;
+  esac
+done
+
+if [[ "$SKIP_BUILD" -eq 0 ]]; then
+  STS2_MODS_DIR="$PACKAGE_BUILD_MOD_DIR" "$BUILD_SCRIPT"
+fi
+
+clean_release_noise
+
+DLL_SOURCE="$(resolve_artifact \
+  "$ASSEMBLY_NAME.dll" \
+  "$DLL_FILE" \
+  "$PACKAGE_BUILD_MOD_DIR/$ASSEMBLY_NAME.dll" \
+  "$PACKAGE_ROOT/$ASSEMBLY_NAME.dll")"
+PCK_SOURCE="$(resolve_artifact \
+  "$ASSEMBLY_NAME.pck" \
+  "$PCK_FILE" \
+  "$PACKAGE_BUILD_MOD_DIR/$ASSEMBLY_NAME.pck" \
+  "$PACKAGE_ROOT/$ASSEMBLY_NAME.pck")"
+
+rm -rf "$PACKAGE_ROOT"
+mkdir -p "$PACKAGE_ROOT"
+cp "$DLL_SOURCE" "$PACKAGE_ROOT/$ASSEMBLY_NAME.dll"
+cp "$PCK_SOURCE" "$PACKAGE_ROOT/$ASSEMBLY_NAME.pck"
+cp "$LOCAL_MANIFEST_FILE" "$PACKAGE_ROOT/$MANIFEST_FILE_NAME"
+cp "$RELEASE_README" "$PACKAGE_ROOT/README.md"
+cp "$GUIDE_FILE" "$PACKAGE_ROOT/"
+cp "$MAC_INSTALLER" "$PACKAGE_ROOT/"
+cp "$MAC_INSTALLER_COMMAND" "$PACKAGE_ROOT/"
+cp "$WIN_INSTALLER" "$PACKAGE_ROOT/"
+cp "$WIN_INSTALLER_BAT" "$PACKAGE_ROOT/"
+rm -f "$PACKAGE_ROOT/$DEFAULTS_FILE_NAME"
+write_lobby_defaults "$PACKAGE_ROOT"
+chmod +x "$PACKAGE_ROOT/install-sts2-lan-connect-macos.sh"
+chmod +x "$PACKAGE_ROOT/install-sts2-lan-connect-macos.command"
+verify_package_manifest "$PACKAGE_ROOT"
+
+cd "$PROJECT_DIR/release"
+rm -f "${ASSEMBLY_NAME}-release.zip"
+zip -qr "${ASSEMBLY_NAME}-release.zip" "$ASSEMBLY_NAME"
+verify_zip_manifest "${ASSEMBLY_NAME}-release.zip"
+cp -f "${ASSEMBLY_NAME}-release.zip" "$CLIENT_ALIAS_ZIP"
+cp -f "${ASSEMBLY_NAME}-release.zip" "$CLIENT_ALT_ALIAS_ZIP"
+echo "Package created at: $PROJECT_DIR/release/${ASSEMBLY_NAME}-release.zip"
