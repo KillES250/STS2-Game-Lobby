@@ -8,8 +8,6 @@ CLIENT_DIR="$ROOT_DIR/sts2-lan-connect/release/sts2_lan_connect"
 CLIENT_ZIP="$ROOT_DIR/sts2-lan-connect/release/sts2_lan_connect-release.zip"
 SERVICE_DIR="$ROOT_DIR/lobby-service/release/sts2_lobby_service"
 SERVICE_ZIP="$ROOT_DIR/lobby-service/release/sts2_lobby_service.zip"
-CLIENT_ALIAS_ZIP="$ROOT_DIR/sts2-lan-connect/release/联机大厅mod.zip"
-CLIENT_ALT_ALIAS_ZIP="$ROOT_DIR/sts2-lan-connect/release/游戏大厅mod-多端优化版.zip"
 PUBLIC_RELEASES_DIR="$REPO_DIR/releases"
 
 usage() {
@@ -35,7 +33,12 @@ log() {
 clean_repo_noise() {
   local repo_dir="$1"
   find "$repo_dir" \( -name '.DS_Store' -o -name 'Thumbs.db' \) -delete
-  rm -f "$repo_dir/游戏大厅mod-多端&UI优化版.zip"
+  rm -f \
+    "$repo_dir/游戏大厅mod-多端&UI优化版.zip" \
+    "$repo_dir/联机大厅mod.zip" \
+    "$repo_dir/游戏大厅mod-多端优化版.zip" \
+    "$repo_dir/releases/联机大厅mod.zip" \
+    "$repo_dir/releases/游戏大厅mod-多端优化版.zip"
 }
 
 sync_root_file() {
@@ -89,8 +92,6 @@ done
 [[ -d "$REPO_DIR/.git" ]] || die "Public repo '$REPO_DIR' is not a git clone."
 [[ -d "$CLIENT_DIR" ]] || die "Client release directory not found: $CLIENT_DIR"
 [[ -f "$CLIENT_ZIP" ]] || die "Client release zip not found: $CLIENT_ZIP"
-[[ -f "$CLIENT_ALIAS_ZIP" ]] || die "Client alias zip not found: $CLIENT_ALIAS_ZIP"
-[[ -f "$CLIENT_ALT_ALIAS_ZIP" ]] || die "Client alternate alias zip not found: $CLIENT_ALT_ALIAS_ZIP"
 [[ -d "$SERVICE_DIR" ]] || die "Service release directory not found: $SERVICE_DIR"
 [[ -f "$SERVICE_ZIP" ]] || die "Service release zip not found: $SERVICE_ZIP"
 require_file "$CLIENT_DIR/install-sts2-lan-connect-windows.bat"
@@ -115,8 +116,6 @@ rm -rf "$PUBLIC_RELEASES_DIR"
 mkdir -p "$PUBLIC_RELEASES_DIR"
 cp -R "$CLIENT_DIR" "$PUBLIC_RELEASES_DIR/sts2_lan_connect"
 cp "$CLIENT_ZIP" "$PUBLIC_RELEASES_DIR/sts2_lan_connect-release.zip"
-cp "$CLIENT_ALIAS_ZIP" "$PUBLIC_RELEASES_DIR/联机大厅mod.zip"
-cp "$CLIENT_ALT_ALIAS_ZIP" "$PUBLIC_RELEASES_DIR/游戏大厅mod-多端优化版.zip"
 cp -R "$SERVICE_DIR" "$PUBLIC_RELEASES_DIR/sts2_lobby_service"
 cp "$SERVICE_ZIP" "$PUBLIC_RELEASES_DIR/sts2_lobby_service.zip"
 

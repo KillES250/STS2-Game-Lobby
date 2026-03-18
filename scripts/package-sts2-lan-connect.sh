@@ -15,8 +15,6 @@ MAC_INSTALLER="$ROOT_DIR/scripts/install-sts2-lan-connect-macos.sh"
 MAC_INSTALLER_COMMAND="$ROOT_DIR/scripts/install-sts2-lan-connect-macos.command"
 WIN_INSTALLER="$ROOT_DIR/scripts/install-sts2-lan-connect-windows.ps1"
 WIN_INSTALLER_BAT="$ROOT_DIR/scripts/install-sts2-lan-connect-windows.bat"
-CLIENT_ALIAS_ZIP="$PROJECT_DIR/release/联机大厅mod.zip"
-CLIENT_ALT_ALIAS_ZIP="$PROJECT_DIR/release/游戏大厅mod-多端优化版.zip"
 DEFAULTS_FILE_NAME="lobby-defaults.json"
 MANIFEST_FILE_NAME="$ASSEMBLY_NAME.json"
 LOCAL_DEFAULTS_FILE="$PROJECT_DIR/$DEFAULTS_FILE_NAME"
@@ -77,7 +75,13 @@ verify_zip_manifest() {
 }
 
 clean_release_noise() {
-  find "$PROJECT_DIR/release" -maxdepth 1 \( -name '.DS_Store' -o -name "$ASSEMBLY_NAME 2" -o -name "$ASSEMBLY_NAME 3" -o -name '游戏大厅mod-多端&UI优化版.zip' \) -exec rm -rf {} +
+  find "$PROJECT_DIR/release" -maxdepth 1 \( \
+    -name '.DS_Store' \
+    -o -name "$ASSEMBLY_NAME 2" \
+    -o -name "$ASSEMBLY_NAME 3" \
+    -o -name '联机大厅mod*.zip' \
+    -o -name '游戏大厅mod*.zip' \
+  \) -exec rm -rf {} +
 }
 
 resolve_artifact() {
@@ -185,6 +189,4 @@ cd "$PROJECT_DIR/release"
 rm -f "${ASSEMBLY_NAME}-release.zip"
 zip -qr "${ASSEMBLY_NAME}-release.zip" "$ASSEMBLY_NAME"
 verify_zip_manifest "${ASSEMBLY_NAME}-release.zip"
-cp -f "${ASSEMBLY_NAME}-release.zip" "$CLIENT_ALIAS_ZIP"
-cp -f "${ASSEMBLY_NAME}-release.zip" "$CLIENT_ALT_ALIAS_ZIP"
 echo "Package created at: $PROJECT_DIR/release/${ASSEMBLY_NAME}-release.zip"
