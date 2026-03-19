@@ -1,0 +1,31 @@
+name: .NET Core CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 .NET 环境
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: | 
+            6.0.x
+            8.0.x
+          # 这样可以同时安装多个版本的 SDK
+      - name: 构建
+        run: sudo bash ./scripts/build-sts2-lan-connect.sh
+      - name: 发布 Artifact (可选)
+        # 将编译好的二进制文件保存到 GitHub，方便下载
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-csharp-app
+          path: bin/Release/
